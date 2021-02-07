@@ -18,12 +18,14 @@ package controllers
 
 import (
 	"context"
-	// 	"strings"
 
+	aws "github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/dlm"
 	"github.com/go-logr/logr"
-	// 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"log"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -49,10 +51,10 @@ type PersistentVolumeClaimReconciler struct {
 
 func (r *PVCSnapshotReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	// 	ctx := context.Background()
-	log := r.Log.WithValues("pvcsnapshot", req.NamespacedName)
+	lg := r.Log.WithValues("pvcsnapshot", req.NamespacedName)
 
 	// your logic here
-	log.Info("Reconcile starting")
+	lg.Info("Reconcile starting")
 
 	// 	var pvc frqv1alpha1.PVCSnapshot
 
@@ -74,17 +76,81 @@ func (r *PersistentVolumeClaimReconciler) SetupWithManager(mgr ctrl.Manager) err
 // +kubebuilder:rbac:groups=,resources=persistentvolumeclaim,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=,resources=persistentvolumeclaim/status,verbs=get;list;watch;create;update;patch;delete
 func (r *PersistentVolumeClaimReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
+
+	var VolumeTagRead string = "kubernetes-dynamic-"
 	ctx := context.Background()
-	log := r.Log.WithValues("persistentvolumeclaim", req.NamespacedName)
+	lg := r.Log.WithValues("persistentvolumeclaim", req.NamespacedName)
 
 	pvc := &corev1.PersistentVolumeClaim{}
 	err := r.Get(ctx, req.NamespacedName, pvc)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	log.Info("pvc created")
-	log.Info(pvc.Name)
-	log.Info(pvc.Namespace)
-	log.Info(pvc.Spec.VolumeName)
+	lg.Info("pvc created")
+	lg.Info(pvc.Name)
+	lg.Info(pvc.Namespace)
+	lg.Info(pvc.Spec.VolumeName)
+	VolumeTagRead += pvc.Spec.VolumeName
+
+	session := session.New(&aws.Config{Region: aws.String("us-east-2")})
+
+	client := dlm.New(session)
+
+	var time string = "09:00"
+	times := []*string{&time}
+	var cr dlm.CreateRule
+	cr.SetInterval(12)
+	cr.SetIntervalUnit("HOURS")
+	cr.SetLocation("CLOUD")
+	cr.SetTimes(times)
+
+	var rr dlm.RetainRule
+	rr.SetCount(1)
+
+	schedules := []*dlm.Schedule{}
+	var s dlm.Schedule
+	s.SetCreateRule(&cr)
+	s.SetName("Schedule1")
+	s.SetRetainRule(&rr)
+
+	schedules = append(schedules, &s)
+
+	var ResourceType string = "VOLUME"
+	var ResourceLocation string = "CLOUD"
+	resourceTypes := []*string{&ResourceType}
+	resourceLocations := []*string{&ResourceLocation}
+
+	var Key string = "Name"
+	var Value string = VolumeTagRead
+	var targetTag dlm.Tag = dlm.Tag{
+		Key:   &Key,
+		Value: &Value,
+	}
+	targetTags := []*dlm.Tag{}
+	targetTags = append(targetTags, &targetTag)
+
+	var p dlm.PolicyDetails
+	p.SetPolicyType("EBS_SNAPSHOT_MANAGEMENT")
+	p.SetResourceLocations(resourceLocations)
+	p.SetResourceTypes(resourceTypes)
+	p.SetSchedules(schedules)
+	p.SetTargetTags(targetTags)
+
+	var lpi dlm.CreateLifecyclePolicyInput
+	lpi.SetDescription(VolumeTagRead)
+	lpi.SetExecutionRoleArn("arn:aws:iam::731556103348:role/service-role/AWSDataLifecycleManagerDefaultRole")
+	lpi.SetPolicyDetails(&p)
+	lpi.SetState("ENABLED")
+
+	reqaws, output := client.CreateLifecyclePolicyRequest(&lpi)
+
+	log.Println("Before send")
+
+	erraws := reqaws.Send()
+	if erraws == nil {
+		log.Println(output)
+	} else {
+		log.Fatal(erraws)
+	}
 	return ctrl.Result{}, nil
 }
