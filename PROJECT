@@ -1,0 +1,7 @@
+domain: akfarooqnaveen.com
+repo: pvcsnapshotoperator
+resources:
+- group: frq
+  kind: PVCSnapshot
+  version: v1alpha1
+version: "2"

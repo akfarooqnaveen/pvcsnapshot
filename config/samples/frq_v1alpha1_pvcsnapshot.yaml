@@ -1,0 +1,8 @@
+apiVersion: frq.akfarooqnaveen.com/v1alpha1
+kind: PVCSnapshot
+metadata:
+  name: pvcsnapshot-sample
+spec:
+  # Add fields here
+  pvcname: "foo"
+  pvcnamespace.omitempty: "bar"

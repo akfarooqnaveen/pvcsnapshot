@@ -1,0 +1,24 @@
+# permissions for end users to edit pvcsnapshots.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pvcsnapshot-editor-role
+rules:
+- apiGroups:
+  - frq.akfarooqnaveen.com
+  resources:
+  - pvcsnapshots
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - frq.akfarooqnaveen.com
+  resources:
+  - pvcsnapshots/status
+  verbs:
+  - get
